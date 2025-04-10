@@ -104,6 +104,18 @@ def process_ir_files(ir_path, container):
         confidence = np.sum(mask) / mask.size * 100
         print(f"Debug: Confidence for {fname}: {confidence}%")
         
+        # Calculate additional crack features
+        crack_area = calculate_crack_area(mask)
+        crack_length = calculate_crack_length(mask)
+        crack_width = calculate_crack_width(mask)
+        
+        print(f"Debug: Crack Area: {crack_area}, Crack Length: {crack_length}, Crack Width: {crack_width}")
+
+        # Store features in session state
+        st.session_state.crack_areas.append(crack_area)
+        st.session_state.crack_lengths.append(crack_length)
+        st.session_state.crack_widths.append(crack_width)
+
         if confidence >= st.session_state.confidence_threshold:
             ts = datetime.datetime.now().strftime("%H:%M:%S")
             try:
@@ -123,6 +135,41 @@ def process_ir_files(ir_path, container):
 
 
 
+def calculate_crack_area(mask):
+    return np.sum(mask)  # Count non-zero pixels (crack area)
+
+def calculate_crack_length(mask):
+    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    crack_length = 0
+    for contour in contours:
+        crack_length += cv2.arcLength(contour, closed=False)
+    return crack_length
+
+def calculate_crack_width(mask):
+    width_values = []
+    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for contour in contours:
+        for point in contour:
+            width_values.append(np.linalg.norm(point[0] - contour[0][0]))
+    return np.mean(width_values) if width_values else 0
+
+def get_crack_position(mask):
+    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    positions = []
+    for contour in contours:
+        M = cv2.moments(contour)
+        if M["m00"] != 0:
+            cX = int(M["m10"] / M["m00"])
+            cY = int(M["m01"] / M["m00"])
+            positions.append((cX, cY))
+    return positions
+
+from skimage.feature import graycomatrix, graycoprops
+def calculate_texture_features(image):
+    glcm = greycomatrix(image, [1], [0], symmetric=True, normed=True)
+    contrast = greycoprops(glcm, 'contrast')
+    correlation = greycoprops(glcm, 'correlation')
+    return contrast, correlation
 
 
 import plotly.graph_objects as go
@@ -130,8 +177,8 @@ import plotly.graph_objects as go
 def update_ir_section(container):
     with container.container():
         st.markdown("### 🔹 Infrared Camera")
-
-        # Display the infrared images
+        
+        # Check if infrared images have been processed and add them to the display
         if st.session_state.infrared_images:
             cols = st.columns(4)
             for i, (img, caption) in enumerate(st.session_state.infrared_images[:8]):
@@ -140,31 +187,43 @@ def update_ir_section(container):
         else:
             st.info("No infrared images processed yet")
 
-        # Display the data in table form
+        # Display the infrared info table if available
         if st.session_state.infrared_infos:
             df = pd.DataFrame(st.session_state.infrared_infos)
             st.dataframe(df)
 
-        # Plot the distribution of crack confidence
-        if st.session_state.infrared_infos:
-            confidence_values = [entry['Confidence'] for entry in st.session_state.infrared_infos]
-            
+        # Plot distribution of crack area, length, or width
+        if st.session_state.crack_areas:
             fig = go.Figure()
-
-            # Create the histogram of confidence values
-            fig.add_trace(go.Histogram(
-                x=confidence_values,
-                nbinsx=20,
-                name="Crack Confidence",
-                marker=dict(color="rgba(255, 99, 132, 0.6)"),
-            ))
-
+            fig.add_trace(go.Histogram(x=st.session_state.crack_areas, name="Crack Area", opacity=0.75))
             fig.update_layout(
-                title="Distribution of Crack Confidence",
-                xaxis_title="Confidence (%)",
-                yaxis_title="Frequency",
-                showlegend=False
+                title="Crack Area Distribution",
+                xaxis_title="Area (pixels)",
+                yaxis_title="Count",
+                bargap=0.2
             )
-
-            # Display the plot
             st.plotly_chart(fig, use_container_width=True)
+
+        # Similarly, you can plot for crack length or crack width
+        if st.session_state.crack_lengths:
+            fig = go.Figure()
+            fig.add_trace(go.Histogram(x=st.session_state.crack_lengths, name="Crack Length", opacity=0.75))
+            fig.update_layout(
+                title="Crack Length Distribution",
+                xaxis_title="Length (pixels)",
+                yaxis_title="Count",
+                bargap=0.2
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        if st.session_state.crack_widths:
+            fig = go.Figure()
+            fig.add_trace(go.Histogram(x=st.session_state.crack_widths, name="Crack Width", opacity=0.75))
+            fig.update_layout(
+                title="Crack Width Distribution",
+                xaxis_title="Width (pixels)",
+                yaxis_title="Count",
+                bargap=0.2
+            )
+            st.plotly_chart(fig, use_container_width=True)
+

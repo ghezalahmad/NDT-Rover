@@ -74,13 +74,19 @@ def init_session():
         'optical_model': None,
         'ir_model': None,
         'gas_model': None,
-        'monitoring_log': []
+        'monitoring_log': [],
+        'crack_areas': [],    # Initialize crack_areas here
+        'crack_lengths': [],  # Initialize crack_lengths here
+        'crack_widths': [],   # Initialize crack_widths here
     }
     for key, default in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default
 
 init_session()
+
+
+
 
 # --- Handle Monitoring Toggle ---
 if start_monitoring:
