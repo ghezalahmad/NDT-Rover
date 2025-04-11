@@ -8,6 +8,8 @@ from PIL import Image
 import streamlit as st
 import cv2
 from tensorflow.keras.models import load_model
+from skimage.feature import graycomatrix, graycoprops
+
 
 def preprocess_image(path, target_size=(128, 128)):
     try:
@@ -109,6 +111,11 @@ def process_ir_files(ir_path, container):
         crack_area = calculate_crack_area(mask)
         crack_length = calculate_crack_length(mask)
         crack_width = calculate_crack_width(mask)
+        # Calculate texture features
+        contrast, correlation = calculate_texture_features(mask)
+        st.session_state.texture_contrast.append(float(contrast[0][0]))
+        st.session_state.texture_correlation.append(float(correlation[0][0]))
+
         
         print(f"Debug: Crack Area: {crack_area}, Crack Length: {crack_length}, Crack Width: {crack_width}")
 
@@ -168,61 +175,87 @@ def get_crack_position(mask):
             positions.append((cX, cY))
     return positions
 
-from skimage.feature import graycomatrix, graycoprops
 def calculate_texture_features(image):
-    glcm = greycomatrix(image, [1], [0], symmetric=True, normed=True)
-    contrast = greycoprops(glcm, 'contrast')
-    correlation = greycoprops(glcm, 'correlation')
+    if len(image.shape) == 3:
+        image = image[:, :, 0]
+
+    image = (image * 255).astype(np.uint8)  # Scale to 0–255
+    glcm = graycomatrix(image, [1], [0], symmetric=True, normed=True)
+    contrast = graycoprops(glcm, 'contrast')
+    correlation = graycoprops(glcm, 'correlation')
     return contrast, correlation
+
+
 
 
 import plotly.graph_objects as go
 def update_ir_section(container):
     with container.container():
         st.markdown("### 🔹 Infrared Camera")
-        if st.session_state.infrared_images:
-            cols = st.columns(4)
-            for i, (img, caption) in enumerate(st.session_state.infrared_images[:8]):
-                with cols[i % 4]:
-                    st.image(img, caption=caption, use_container_width=True)
-        else:
-            st.info("No infrared images processed yet")
 
-        if st.session_state.infrared_infos:
-            df = pd.DataFrame(st.session_state.infrared_infos)
-            st.dataframe(df)
+        # --- Image Display Section ---
+        with st.expander("📷 View Infrared Crack Images", expanded=True):
+            if st.session_state.infrared_images:
+                cols = st.columns(4)
+                for i, (img, caption) in enumerate(st.session_state.infrared_images[:8]):
+                    with cols[i % 4]:
+                        st.image(img, caption=caption, use_container_width=True)
+            else:
+                st.info("No infrared images processed yet")
 
-        # Plot distribution of crack area, length, or width
-        if st.session_state.crack_areas:
-            fig = go.Figure()
-            fig.add_trace(go.Histogram(x=st.session_state.crack_areas, name="Crack Area", opacity=0.75))
-            fig.update_layout(
-                title="Crack Area Distribution",
-                xaxis_title="Area (pixels)",
-                yaxis_title="Count",
-                bargap=0.2
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        # --- Table Section ---
+        with st.expander("📋 Crack Detection Table", expanded=True):
+            if st.session_state.infrared_infos:
+                df = pd.DataFrame(st.session_state.infrared_infos)
+                st.dataframe(df)
+            else:
+                st.info("No crack info table to display")
 
-        # Similarly, you can plot for crack length or crack width
-        if st.session_state.crack_lengths:
-            fig = go.Figure()
-            fig.add_trace(go.Histogram(x=st.session_state.crack_lengths, name="Crack Length", opacity=0.75))
-            fig.update_layout(
-                title="Crack Length Distribution",
-                xaxis_title="Length (pixels)",
-                yaxis_title="Count",
-                bargap=0.2
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        # --- Crack Distribution Charts ---
+        with st.expander("📊 Crack Feature Distributions"):
+            if st.session_state.crack_areas:
+                st.plotly_chart(go.Figure(
+                    go.Histogram(x=st.session_state.crack_areas, name="Crack Area", opacity=0.75)
+                ).update_layout(
+                    title="Crack Area Distribution", xaxis_title="Area (px)", yaxis_title="Count", bargap=0.2
+                ), use_container_width=True)
 
-        if st.session_state.crack_widths:
-            fig = go.Figure()
-            fig.add_trace(go.Histogram(x=st.session_state.crack_widths, name="Crack Width", opacity=0.75))
-            fig.update_layout(
-                title="Crack Width Distribution",
-                xaxis_title="Width (pixels)",
-                yaxis_title="Count",
-                bargap=0.2
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            if st.session_state.crack_lengths:
+                st.plotly_chart(go.Figure(
+                    go.Histogram(x=st.session_state.crack_lengths, name="Crack Length", opacity=0.75)
+                ).update_layout(
+                    title="Crack Length Distribution", xaxis_title="Length (px)", yaxis_title="Count", bargap=0.2
+                ), use_container_width=True)
+
+            if st.session_state.crack_widths:
+                st.plotly_chart(go.Figure(
+                    go.Histogram(x=st.session_state.crack_widths, name="Crack Width", opacity=0.75)
+                ).update_layout(
+                    title="Crack Width Distribution", xaxis_title="Width (px)", yaxis_title="Count", bargap=0.2
+                ), use_container_width=True)
+
+        # --- Crack Trends Over Time ---
+        with st.expander("📈 Crack Feature Trends (Last 30 Images)", expanded=False):
+            if st.session_state.crack_areas:
+                trend_df = pd.DataFrame({
+                    "Area": st.session_state.crack_areas[-30:],
+                    "Length": st.session_state.crack_lengths[-30:],
+                    "Width": st.session_state.crack_widths[-30:]
+                })
+                st.line_chart(trend_df)
+            else:
+                st.info("No trend data yet.")
+
+        # --- Texture Features (GLCM Contrast & Correlation) ---
+        with st.expander("🧠 Texture Features (Contrast / Correlation)", expanded=False):
+            if "texture_contrast" in st.session_state and "texture_correlation" in st.session_state:
+                tex_df = pd.DataFrame({
+                    "Contrast": st.session_state.texture_contrast[-30:],
+                    "Correlation": st.session_state.texture_correlation[-30:]
+                })
+                st.dataframe(tex_df)
+
+                st.line_chart(tex_df)
+            else:
+                st.info("Texture features will appear as new cracks are processed.")
+

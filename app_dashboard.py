@@ -47,6 +47,9 @@ def init_session():
         'min_aspect_ratio': 0.0,
         'max_aspect_ratio': 10.0,
         'blur_kernel_size': 3,
+        'texture_contrast': [],
+        'texture_correlation': [],
+
     }
     for key, default in defaults.items():
         if key not in st.session_state:
