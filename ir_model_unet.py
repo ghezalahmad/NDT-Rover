@@ -64,7 +64,8 @@ def overlay_mask_on_ir(image, mask):
         rgb_image = original.copy()
         rgb_image[mask] = [255, 0, 0]  # Red color for cracks
     
-    return Image.fromarray(rgb_image)
+    return Image.fromarray(rgb_image.astype(np.uint8)).convert("RGB")
+
 
 
 
@@ -117,10 +118,11 @@ def process_ir_files(ir_path, container):
         st.session_state.crack_widths.append(crack_width)
 
         if confidence >= st.session_state.confidence_threshold:
+            # Bypass threshold check during debugging
             ts = datetime.datetime.now().strftime("%H:%M:%S")
             try:
                 overlay = overlay_mask_on_ir(img, mask)
-                # Ensure that the overlay image is added to the infrared images list
+                print(f"Overlay type: {type(overlay)}")
                 st.session_state.infrared_images.insert(0, (overlay, f"{ts} | Crack | {confidence:.1f}%"))
                 st.session_state.infrared_infos.insert(0, {
                     "Time": ts,
@@ -132,6 +134,8 @@ def process_ir_files(ir_path, container):
                 st.error(f"Error creating overlay: {e}")
                 import traceback
                 print(traceback.format_exc())
+
+
 
 
 
@@ -173,12 +177,9 @@ def calculate_texture_features(image):
 
 
 import plotly.graph_objects as go
-
 def update_ir_section(container):
     with container.container():
         st.markdown("### 🔹 Infrared Camera")
-        
-        # Check if infrared images have been processed and add them to the display
         if st.session_state.infrared_images:
             cols = st.columns(4)
             for i, (img, caption) in enumerate(st.session_state.infrared_images[:8]):
@@ -187,7 +188,6 @@ def update_ir_section(container):
         else:
             st.info("No infrared images processed yet")
 
-        # Display the infrared info table if available
         if st.session_state.infrared_infos:
             df = pd.DataFrame(st.session_state.infrared_infos)
             st.dataframe(df)
@@ -226,4 +226,3 @@ def update_ir_section(container):
                 bargap=0.2
             )
             st.plotly_chart(fig, use_container_width=True)
-
