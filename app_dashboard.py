@@ -187,7 +187,7 @@ with st.sidebar:
     with st.expander("🧠 Model Paths", expanded=False):
         gas_model_path = st.text_input("Gas Model", value="gas_model.pkl")
         gas_scaler_path = st.text_input("Gas Scaler", value="gas_scaler.pkl")
-        optical_model_path = st.text_input("Optical Model", value="optical_cnn_model.h5")
+        optical_model_path = st.text_input("Optical Model", value="mobilenetv2_crack_model_no_aug.h5")
         ir_model_path = st.text_input("IR Model", value="ir_unet_model.h5")
 
     st.markdown("### 📊 Sensor Selection")
@@ -328,6 +328,25 @@ with tabs[2]:
         st.info("No gas data available yet")
     st.markdown('</div>', unsafe_allow_html=True)
 
+
+# --- Monitoring Log Table ---
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.markdown('<h3 class="subheader">📑 Monitoring Log</h3>', unsafe_allow_html=True)
+
+if st.session_state['monitoring_log']:
+    df_log = pd.DataFrame(st.session_state['monitoring_log'])
+    st.dataframe(df_log)
+
+    # Allow download
+    #st.download_button(
+    #    "📥 Download Monitoring Log",
+    #    df_log.to_csv(index=False),
+    #    file_name="monitoring_log.csv"
+    #)
+else:
+    st.info("Monitoring log will appear here as sensors process data.")
+st.markdown('</div>', unsafe_allow_html=True)
+
 # --- System Status Card ---
 st.markdown('<div class="card">', unsafe_allow_html=True)
 st.markdown('<h3 class="subheader">System Status</h3>', unsafe_allow_html=True)
@@ -366,19 +385,62 @@ status_message = st.empty()
 if st.session_state['monitoring']:
     with st.spinner("Processing sensor data..."):
         while st.session_state['monitoring']:
+            # Optical Processing
             if "Optical Camera" in sensor_selection:
+                start_time = time.time()
                 process_optical_files(optical_path, optical_section)
                 update_optical_section(optical_section)
+                elapsed_time = time.time() - start_time
+                timestamp = datetime.datetime.now().strftime("%H:%M:%S")
 
+                # Assume detection if new optical images were added
+                detection = "Detected" if st.session_state['optical_images'] else "Not Detected"
+
+                st.session_state['monitoring_log'].append({
+                    "Timestamp": timestamp,
+                    "Sensor Type": "Optical",
+                    "Inference Time (s)": round(elapsed_time, 2),
+                    "Detection": "Crack",
+                    "Result": detection
+                })
+
+            # IR Processing
             if "Infrared Camera" in sensor_selection:
+                start_time = time.time()
                 process_ir_files(ir_path, ir_section)
                 update_ir_section(ir_section)
+                elapsed_time = time.time() - start_time
+                timestamp = datetime.datetime.now().strftime("%H:%M:%S")
 
+                detection = "Detected" if st.session_state['infrared_images'] else "Not Detected"
+
+                st.session_state['monitoring_log'].append({
+                    "Timestamp": timestamp,
+                    "Sensor Type": "Infrared",
+                    "Inference Time (s)": round(elapsed_time, 2),
+                    "Detection": "Crack",
+                    "Result": detection
+                })
+
+            # Gas Processing
             if "Gas Detector" in sensor_selection:
+                start_time = time.time()
                 run_gas_simulator(st.session_state['gas_df'], st.session_state['gas_model'], gas_section)
+                elapsed_time = time.time() - start_time
+                timestamp = datetime.datetime.now().strftime("%H:%M:%S")
 
-            # Sleep for 2 seconds before processing the next batch
+                detection = "Detected" if st.session_state['gas_alerts'] else "Not Detected"
+
+                st.session_state['monitoring_log'].append({
+                    "Timestamp": timestamp,
+                    "Sensor Type": "Gas",
+                    "Inference Time (s)": round(elapsed_time, 2),
+                    "Detection": "Anomaly",
+                    "Result": detection
+                })
+
             time.sleep(2)
+
 
 # --- Improved Footer ---
 st.markdown("""
